@@ -89,17 +89,12 @@ int main() {
 ```
 ## API Overview
 
-### `Pool \*pool_create(size_t capacity, size_t block_size)`
-Creates a new memory pool.
+- **Pool \*pool_create(size_t capacity, size_t block_size)**: Creates a new memory pool.
 
-### `void \*pool_alloc(Pool \*pool)`
-Allocates a block of memory from the pool.
+- **void \*pool_alloc(Pool \*pool)**: Allocates a block of memory from the pool.
 
-### `void pool_free(Pool \*pool, void \*memblock)`
-Frees a previously allocated block.
+- **void pool_free(Pool \*pool, void \*memblock)**: Frees a previously allocated block.
 
-### `void pool_clear(Pool \*pool)`
-Frees all blocks in the pool.
+- **void pool_clear(Pool \*pool)**: Frees all blocks in the pool.
 
-### `void pool_destroy(Pool \*pool)`
-Destroys the pool and frees all associated memory.
+- **void pool_destroy(Pool \*pool)**: Destroys the pool and frees all associated memory.
