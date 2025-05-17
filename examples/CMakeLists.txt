@@ -1,0 +1,5 @@
+add_executable(block_pool_driver block_pool_driver.c)
+target_link_libraries(block_pool_driver PRIVATE block_pool)
+
+add_executable(dynamic_pool_driver dynamic_pool_driver.c)
+target_link_libraries(dynamic_pool_driver PRIVATE dynamic_pool)

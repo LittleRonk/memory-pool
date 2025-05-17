@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <memory_pool.h>
+#include <block_pool.h>
 
 // Example data structure that we will store in the pool
 typedef struct {
@@ -12,23 +12,23 @@ int main() {
     // Create a pool with capacity = 5 and block_size = sizeof(Data)
     size_t capacity = 5;
     size_t block_size = sizeof(Data);
-    Pool *pool = pool_create(capacity, block_size);
+    PoolBlock *pool = pool_block_create(capacity, block_size);
 
     if (!pool) {
         printf("Error creating the pool!\n");
         return 1;
     }
 
-    printf("Pool successfully created. Capacity: %zu, Block size: %zu\n", pool->capacity, pool->block_size);
+    printf("PoolFixed successfully created. Capacity: %zu, Block size: %zu\n", pool->capacity, pool->block_size);
 
     // Allocate several memory blocks from the pool
-    Data *data1 = (Data *)pool_alloc(pool);
-    Data *data2 = (Data *)pool_alloc(pool);
-    Data *data3 = (Data *)pool_alloc(pool);
+    Data *data1 = (Data *)pool_block_alloc(pool);
+    Data *data2 = (Data *)pool_block_alloc(pool);
+    Data *data3 = (Data *)pool_block_alloc(pool);
 
     if (!data1 || !data2 || !data3) {
         printf("Error allocating memory from the pool!\n");
-        pool_destroy(pool);
+        pool_block_destroy(pool);
         return 1;
     }
 
@@ -51,13 +51,13 @@ int main() {
 
     // Free one of the memory blocks
     printf("Freeing block data2...\n");
-    pool_free(pool, data2);
+    pool_block_free(pool, data2);
 
     // Try to allocate another block (should reuse the freed block)
-    Data *data4 = (Data *)pool_alloc(pool);
+    Data *data4 = (Data *)pool_block_alloc(pool);
     if (!data4) {
         printf("Error allocating memory from the pool!\n");
-        pool_destroy(pool);
+        pool_block_destroy(pool);
         return 1;
     }
 
@@ -68,13 +68,13 @@ int main() {
 
     // Clear the entire pool
     printf("Clearing the pool...\n");
-    pool_clear(pool);
+    pool_block_clear(pool);
 
     // Try to allocate another block after clearing
-    Data *data5 = (Data *)pool_alloc(pool);
+    Data *data5 = (Data *)pool_block_alloc(pool);
     if (!data5) {
         printf("Error allocating memory from the pool after clearing!\n");
-        pool_destroy(pool);
+        pool_block_destroy(pool);
         return 1;
     }
 
@@ -85,7 +85,7 @@ int main() {
 
     // Destroy the pool
     printf("Destroying the pool...\n");
-    pool_destroy(pool);
+    pool_block_destroy(pool);
 
     printf("Testing completed.\n");
     return 0;
