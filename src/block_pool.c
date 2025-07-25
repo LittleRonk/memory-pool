@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <pool_errors.h>
 #include <block_pool.h>
 
@@ -29,9 +30,11 @@ PoolBlock *pool_block_create(size_t capacity, size_t block_size)
         goto buffer_allocation_error;
 
     new_pool->mem_pool = mem_pool;
+    new_pool->last_block = mem_pool + (capacity - 1) * (block_size + 1);
     new_pool->capacity = capacity;
     new_pool->block_size = block_size + 1;
     new_pool->size = 0;
+    new_pool->last_clear = NULL;
 
     return new_pool;
 
@@ -61,19 +64,37 @@ void *pool_block_alloc(PoolBlock *pool)
     byte (*buffer)[pool->block_size] = pool->mem_pool;
     byte *free_flag = NULL;
 
+    // Checking the last freed block
+    if (pool->last_clear)
+    {
+        free_flag = pool->last_clear;
+        if (*free_flag == 0)
+        {
+            *free_flag = 1;
+            ++pool->size;
+            pool->last_clear = NULL;
+            return (void *) (free_flag + 1);
+        }
+    }
+
     /*
      * We loop through the blocks and check the busy flags (first byte), if the 
      * block is free then we return the pointer to the second byte of the block
      */
+
+    free_flag = pool->mem_pool;
+
+    // Looking for a free block
     for (int i = 0; i < pool->capacity; ++i)
     {
-        free_flag = *(buffer + i);
         if (*free_flag == 0)
         {
             *free_flag = 1;
             ++pool->size;
             return (void *) (free_flag + 1);
         }
+
+        free_flag += pool->block_size;
     }
 
     pool_last_error = POOL_ALLOC_FAILED;
@@ -97,16 +118,8 @@ bool pool_block_contains(const PoolBlock *pool, const void *memblock)
         return false;
 
     // Check if the block is the start of block in the pool.
-    byte *block_start = NULL;
-    byte (*buffer)[pool->block_size] = pool->mem_pool;
-    for (int i = 0; i < pool->capacity; ++i)
-    {
-        block_start = *(buffer + i);
-        if (block_start == (byte *) memblock)
-            return true;
-    }
-
-    return false;
+    return ((uintptr_t)pool_start - (uintptr_t) memblock) %
+        pool->block_size == 0;
 }
 
 void pool_block_free(PoolBlock *pool, void *memblock)
@@ -136,6 +149,7 @@ void pool_block_free(PoolBlock *pool, void *memblock)
     }
 
     *free_flag = 0;
+    pool->last_clear = free_flag;
     --pool->size;
 }
 

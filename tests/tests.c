@@ -11,6 +11,8 @@ int main() {
     test_dynamic_pool_basic();
     test_dynamic_pool_various_sizes();
     test_dynamic_pool_canary_corruption();
+    test_dynamic_pool_alignment();
+    test_dynamic_pool_coalesce();
 
     printf("All tests passed!\n");
     return 0;

@@ -35,4 +35,14 @@ void test_dynamic_pool_various_sizes(void);
  */
 void test_dynamic_pool_canary_corruption(void);
 
+/**
+ * @brief Testing pool and block alignment.
+ */
+void test_dynamic_pool_alignment(void);
+
+/**
+ * @brief Testing pool fregmentation
+ */
+void test_dynamic_pool_coalesce(void);
+
 #endif // TESTS_H

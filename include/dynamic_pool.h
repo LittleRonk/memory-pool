@@ -1,4 +1,4 @@
-/*
+/**
  * @file: dynamic_pool.h
  * @brief: Implementing a memory pool with dynamic block size.
  *
@@ -16,8 +16,8 @@
 #define CANARY_USED 0xFFFFC0DE
 
 // Macros for alignment to the nearest multiple
-#define ALIGN_UP(value, align) (((value) + (align - 1)) & ~((align) - 1))
-#define ALIGN_DOWN(value, align) ((value) / (align) * (align))
+#define MULTIPLICITY_UP(value, align) (((value) + (align - 1)) & ~((align) - 1))
+#define MULTIPLICITY_DOWN(value, align) ((value) / (align) * (align))
 
 /**
  * Used to increase allocated memory to compensate
@@ -28,8 +28,14 @@
 // The minimum amount of memory that can be allocated (must be a multiple 8)
 #define MIN_ALLOC_SIZE 8
 
-// Represents the minimum memory addressing cell (1 byte)
-typedef unsigned char byte;
+// Used to align the pool address. It is forbidden to change this value.
+#define ALIGNMENT 8
+
+/**
+ * Defines the multiplicity of the pool and allocated memory
+ * cells. It is forbidden to change this value.
+ */
+#define MULTIPLICITY 8
 
 /**
  * Represents Meta information about a block
@@ -46,7 +52,8 @@ typedef struct meta_data {
  * Memory pool structure
  */
 typedef struct pool_dyn {
-    void *mem_pool;     // Pointer to the beginning of the pool
+    void *raw;           // Start of unaligned pool
+    void *mem_pool;     // Start of aligned pool
     size_t capacity;    // Total size of the memory pool (in bytes)
     size_t size;        // Amount of allocated memory (in bytes)
 } PoolDyn;
@@ -67,8 +74,6 @@ PoolDyn *pool_dyn_create(size_t capacity);
 /**
  *  @brief Allocates the requested amount of memory from the pool.
  *
- *  8 byte alignment is used.
- *
  *  @param pool Pointer to the memory pool.
  *  @param size Amount of memory required.
  *  @return Pointer to the beginning of the allocated memory,
@@ -81,6 +86,26 @@ PoolDyn *pool_dyn_create(size_t capacity);
  *          -POOL_BLOCK_DAMAGED: One of the blocks is damaged.
  */
 void *pool_dyn_alloc(PoolDyn *pool, size_t size);
+
+/**
+ * @brief pool_alloc function wrapper.
+ *
+ * If the allocation fails the function may attempt 
+ * to merge free blocks and retry the allocation.
+ *
+ *  @param pool Pointer to the memory pool.
+ *  @param size Amount of memory required.
+ *  @return Pointer to the beginning of the allocated memory,
+ *  NULL if an error occurred.
+ *
+ *  @errors:
+ *          -POOL_OK: Function worked without errors.
+ *          -POOL_NULL_PTR: Pool pointer is NULL.
+ *          -POOL_ALLOC_FAILED: Failed to allocate the requested amount memory.
+ *          -POOL_BLOCK_DAMAGED: One of the blocks is damaged.
+ */
+void *pool_dyn_alloc_safe(PoolDyn *pool, size_t size);
+
 
 /**
  * @brief Frees previously allocated memory.
@@ -125,6 +150,7 @@ void pool_dyn_destroy(PoolDyn *pool);
 
 /**
  * @brief Returns the current size of the pool's occupied space.
+ * @param pool Pointer to the pool.
  *
  * @errors:
  *          -POOL_OK: Function worked without errors.
@@ -134,11 +160,22 @@ size_t pool_dyn_size(PoolDyn *pool);
 
 /**
  * @brief Returns the total size of the pool.
+ * @param pool Pointer to the pool.
  *
  * @errors:
  *          -POOL_OK: Function worked without errors.
  *          -POOL_NULL_PTR: pool pointer is NULL.
  */
 size_t pool_dyn_capacity(PoolDyn *pool);
+
+/**
+ * @brief Eliminates pool fragmentation by merging free blocks.
+ * @param pool Pointer to the pool.
+ *
+ * @errors:
+ *          -POOL_OK: Function worked without errors.
+ *          -POOL_NULL_PTR: pool pointer is NULL.
+ */
+void coalesce_free_blocks(PoolDyn *pool);
 
 #endif // DYNAMIC_POOL

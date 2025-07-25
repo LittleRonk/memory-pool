@@ -18,54 +18,38 @@ PoolDyn *pool_dyn_create(size_t capacity)
     /** 
      * We compensate for the memory occupied by metadata
      * by default, 25% more memory is allocated.
-     * Then we align this value to the nearest multiple
-     * of 24 (the minimum block size including metadata)
      */
     size_t final_capacity = capacity * ADVANCE;
-    final_capacity = ALIGN_UP(final_capacity, sizeof(MetaData) + MIN_ALLOC_SIZE);
-
-    byte advance_flag = 0; // Compensation flag
 
     /** 
      * Overflow check
      * We don't allocate more memory (in bytes) than the
      * maximum value of the size_t type.
      */
-    void *mem_pool;
     if (final_capacity < capacity)
-    {
-        final_capacity = ALIGN_UP(capacity, sizeof(MetaData) + MIN_ALLOC_SIZE);
-        if (final_capacity < capacity)
-            final_capacity = ALIGN_DOWN(capacity, sizeof(MetaData) + MIN_ALLOC_SIZE);
-        mem_pool = malloc(final_capacity);
-    }
-    else
-    {
-        mem_pool = malloc(final_capacity);
-        advance_flag = 1;
-    }
+        final_capacity = capacity;
 
-    if (!mem_pool)
+    void *raw = malloc(final_capacity);
+    if (!raw)
     {
         pool_last_error = POOL_ALLOC_FAILED;
         free(new_pool);
         return NULL;
     }
 
+    // Align the address of the beginning of the pool
+    void *mem_pool = (void *) (((uintptr_t) raw + (ALIGNMENT - 1)) &
+            ~(ALIGNMENT - 1));
+
     MetaData *block_meta = mem_pool;
-    if (advance_flag)
-    {
-        block_meta->size = final_capacity - sizeof(MetaData);
-        new_pool->capacity = final_capacity;
-    }
-    else
-    {
-        block_meta->size = capacity - sizeof(MetaData);
-        new_pool->capacity = capacity;
-    }
+
+    // Empty pool is one big block
+    block_meta->size = final_capacity - sizeof(MetaData);
+    new_pool->capacity = final_capacity;
 
     block_meta->next_block = NULL;
     block_meta->canary = CANARY_FREE;
+    new_pool->raw = raw;
     new_pool->mem_pool = mem_pool;
     new_pool->size = sizeof(MetaData);
 
@@ -82,13 +66,16 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
     }
 
     /**
-     * We align the requested amount of memory to the
-     * nearest multiple of 8 (minimum amount of memory allocated
-     * in bytes)
+     * Increase the allocated memory volume to the minimum
+     * or round up to a multiple.
      */
-    size_t align_size = ALIGN_UP(size, 8);
+    size_t alloc_size;
+    if (size < MIN_ALLOC_SIZE)
+        alloc_size = MIN_ALLOC_SIZE;
+    else
+        alloc_size = MULTIPLICITY_UP(size, MULTIPLICITY);
 
-    if (align_size > (pool->capacity - pool->size))
+    if (alloc_size > (pool->capacity - pool->size))
     {
         pool_last_error = POOL_ALLOC_FAILED;
         return NULL;
@@ -99,10 +86,9 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
      */
     MetaData *block = pool->mem_pool;
     bool find_flag = false;
-    int i = 0;
     while (block)
     {
-        if (block->canary == CANARY_FREE && block->size >= align_size)
+        if (block->canary == CANARY_FREE && block->size >= alloc_size)
         {
             find_flag = true;
             break;
@@ -113,7 +99,10 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
          * pool may result in unpredictable behavior
          */
         if (block->canary != CANARY_FREE && block->canary != CANARY_USED)
+        {
+            pool_last_error = POOL_BLOCK_DAMAGED;
             return NULL;
+        }
 
         block = block->next_block;
     }
@@ -125,19 +114,19 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
          * there is enough space left for a new block of the minimum size,
          * we divide the original block into 2 blocks
          */
-        if (block->size >= (sizeof(MetaData) + align_size + 8))
+        if (block->size >= (sizeof(MetaData) + alloc_size + MIN_ALLOC_SIZE))
         {
-            MetaData *new_block = (void *) block + sizeof(MetaData) + align_size;
+            MetaData *new_block = (void *) block + sizeof(MetaData) + alloc_size;
             new_block->canary = CANARY_FREE;
-            new_block->size = block->size - sizeof(MetaData) - align_size;
+            new_block->size = block->size - sizeof(MetaData) - alloc_size;
             new_block->next_block = block->next_block;
 
-            block->size = align_size;
+            block->size = alloc_size;
             block->next_block = new_block;
-            pool->size += sizeof(MetaData) + align_size;
+            pool->size += sizeof(MetaData) + alloc_size;
         }
         else
-            pool->size += align_size;
+            pool->size += alloc_size;
 
         block->canary = CANARY_USED;
         return (void *) block + sizeof(MetaData);
@@ -145,6 +134,24 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
 
     pool_last_error = POOL_ALLOC_FAILED;
     return NULL;
+}
+
+void *pool_dyn_alloc_safe(PoolDyn *pool, size_t size)
+{
+    void *block = pool_dyn_alloc(pool, size);
+    
+    /**
+     * If the allocation fails, we check if there is
+     * enough free space in the pool,
+     * try to merge the free blocks, and retry the allocation.
+     */
+    if (!block && pool->capacity - pool->size >= size)
+    {
+        coalesce_free_blocks(pool);
+        block = pool_dyn_alloc(pool, size);
+    }
+
+    return block;
 }
 
 void pool_dyn_free(PoolDyn *pool, void *block)
@@ -164,8 +171,7 @@ void pool_dyn_free(PoolDyn *pool, void *block)
     }
 
     // Check alignment
-    unsigned int alignment = sizeof(MetaData) + MIN_ALLOC_SIZE;
-    if (((uintptr_t) pool->mem_pool - (uintptr_t) block) % alignment != 0)
+    if ((uintptr_t) block % ALIGNMENT != 0)
     {
         pool_last_error = POOL_INVALID_PTR;
         return;
@@ -207,7 +213,7 @@ void pool_dyn_destroy(PoolDyn *pool)
         return;
     }
 
-    free(pool->mem_pool);
+    free(pool->raw);
     free(pool);
 }
 
@@ -231,4 +237,38 @@ size_t pool_dyn_capacity(PoolDyn *pool)
         return 0;
     }
     return pool->capacity;
+}
+
+void coalesce_free_blocks(PoolDyn *pool)
+{
+    pool_last_error = POOL_OK;
+    if (!pool)
+    {
+        pool_last_error = POOL_NULL_PTR;
+        return;
+    }
+
+    MetaData *block_1 = pool->mem_pool;
+    MetaData *block_2 = block_1->next_block;
+
+    while (block_2)
+    {
+        // If two adjacent blocks are free, we merge them.
+        if (block_1->canary == CANARY_FREE &&
+                block_2->canary == CANARY_FREE)
+        {
+            block_1->next_block = block_2->next_block;
+            block_1->size += sizeof(MetaData) + block_2->size;
+            pool->size -= sizeof(MetaData);
+
+            /**
+             * We move to the next block and try again (in case
+             * free blocks follow each other)
+             */
+            block_2 = block_2->next_block;
+            continue;
+        }
+        block_1 = block_2;
+        block_2 = block_2->next_block;
+    }
 }

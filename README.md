@@ -4,8 +4,7 @@ Implementing pools with fixed and dynamic block sizes in C
 
 ## In Development
 
-- **Allocation optimization**: Optimizing the search for free memory blocks.
-- **Eliminating fragmentation**: Separate function to combat fragmentation.
+- **Address alignment**: Fixed block size pool address alignment.
 
 ## Key Features
 
@@ -128,6 +127,8 @@ int main() {
 
 - **void \*pool_dyn_alloc(PoolDyn \*pool, size_t size)**: Allocate memory from the pool.
 
+- **void \*pool_dyn_alloc_safe(PoolDyn \*pool, size_t size)**: Allocation with automatic merging of free blocks.
+
 - **void pool_dyn_free(PoolDyn \*pool, void \*block)**: Free previously allocated memory.
 
 - **void pool_dyn_clear(PoolDyn \*pool)**: Clear pool.
@@ -137,3 +138,5 @@ int main() {
 - **size_t pool_dyn_size(PoolDyn \*pool)**: Returns the current size of the pool's occupied space.
 
 - **size_t pool_dyn_capacity(PoolDyn \*pool)**: Returns the total size of the pool.
+
+- **void coalesce_free_blocks(PoolDyn \*pool)**: Merges adjacent free blocks (eliminates fragmentation).

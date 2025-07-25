@@ -17,10 +17,12 @@ typedef unsigned char byte;
 
 /* Defining the structure of a memory pool */
 typedef struct pool_block {
-    void *mem_pool;         // Pointer to the beginning of the allocated pool.
-    size_t capacity;      // Maximum number of pool elements.
-    size_t block_size;    // The size of one element in bytes.
-    size_t size;          // The number of occupied pool blocks.
+    void *mem_pool;     // Pointer to the beginning of the allocated pool.
+    void *last_block;   // Last block of the pool.
+    size_t capacity;    // Maximum number of pool elements.
+    size_t block_size;  // The size of one element in bytes.
+    size_t size;        // The number of occupied pool blocks.
+    void *last_clear;   // Pointer to the last cleared block.
 } PoolBlock;
 
 /**
