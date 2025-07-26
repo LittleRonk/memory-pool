@@ -11,17 +11,26 @@
 
 #include <stddef.h>
 
-/* Define a byte as an unsigned char, which is typically 8 bits and
- * represents a single byte of memory */
+// Using to align memory addresses. This value must be STRICTLY a power of 2.
+#define BLOCK_POOL_ALIGNMENT 8
+
+// Minimum size of allocated block. Must be a multiple of alignment.
+//#define MIN_BLOCK_SIZE 4
+
+// Round up to the nearest multiple.
+#define MULTIPLE_UP(value, multiple) ((value) + (((multiple) - 1)) & \
+        ~((multiple) - 1))
+
 typedef unsigned char byte;
 
 /* Defining the structure of a memory pool */
 typedef struct pool_block {
-    void *mem_pool;     // Pointer to the beginning of the allocated pool.
-    void *last_block;   // Last block of the pool.
+    void *mem_pool;     // Pointer to the pool bubber.
     size_t capacity;    // Maximum number of pool elements.
     size_t block_size;  // The size of one element in bytes.
     size_t size;        // The number of occupied pool blocks.
+    size_t offset;      // Offset of the data field relative to the
+                        // beginning of the block.
     void *last_clear;   // Pointer to the last cleared block.
 } PoolBlock;
 

@@ -6,6 +6,7 @@ int main() {
     test_block_pool_basic();
     test_block_pool_overflow();
     test_block_pool_invalid_free();
+    test_block_pool_alignment();
 
     // Dynamic pool tests
     test_dynamic_pool_basic();

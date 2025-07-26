@@ -18,6 +18,11 @@ void test_block_pool_overflow(void);
  */
 void test_block_pool_invalid_free(void);
 
+/**
+ * @brief Testing block alignment.
+ */
+void test_block_pool_alignment(void);
+
 // Dynamic pool tests
 /**
  * @brief We check the operation of the main operations (allocation,

@@ -4,7 +4,7 @@ Implementing pools with fixed and dynamic block sizes in C
 
 ## In Development
 
-- **Address alignment**: Fixed block size pool address alignment.
+- **Data recovery**: Attempt to recovery data when dynamic pool blocks are damaged
 
 ## Key Features
 

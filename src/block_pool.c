@@ -21,20 +21,26 @@ PoolBlock *pool_block_create(size_t capacity, size_t block_size)
         return NULL;
     }
 
-    /*
-     * We allocate memory for the pool, add 1 byte to the block size
-     * to store the busy flag
+    /**
+     * The block size must be a multiple of the alignment.
+     * We add the alignment value to be able to offset the payload
+     * within the block.
      */
-    byte (*mem_pool)[block_size + 1] = calloc(capacity, block_size + 1);
+    size_t mult_block_size = MULTIPLE_UP(block_size, BLOCK_POOL_ALIGNMENT) +
+        BLOCK_POOL_ALIGNMENT;
+
+    byte (*mem_pool)[mult_block_size] = 
+        calloc(capacity, mult_block_size);
     if (!mem_pool)
         goto buffer_allocation_error;
 
     new_pool->mem_pool = mem_pool;
-    new_pool->last_block = mem_pool + (capacity - 1) * (block_size + 1);
     new_pool->capacity = capacity;
-    new_pool->block_size = block_size + 1;
+    new_pool->block_size = mult_block_size;
     new_pool->size = 0;
     new_pool->last_clear = NULL;
+    new_pool->offset = MULTIPLE_UP((uintptr_t) mem_pool, BLOCK_POOL_ALIGNMENT) -
+        (uintptr_t) mem_pool;
 
     return new_pool;
 
@@ -73,7 +79,7 @@ void *pool_block_alloc(PoolBlock *pool)
             *free_flag = 1;
             ++pool->size;
             pool->last_clear = NULL;
-            return (void *) (free_flag + 1);
+            return (void *) (free_flag + pool->offset);
         }
     }
 
@@ -91,7 +97,7 @@ void *pool_block_alloc(PoolBlock *pool)
         {
             *free_flag = 1;
             ++pool->size;
-            return (void *) (free_flag + 1);
+            return (void *) (free_flag + pool->offset);
         }
 
         free_flag += pool->block_size;
@@ -113,7 +119,7 @@ bool pool_block_contains(const PoolBlock *pool, const void *memblock)
 {
     // Check if the block is within the bounds of the pool's memory.
     void *pool_start = pool->mem_pool;
-    void *pool_end = (byte *) pool_start + pool->capacity * pool->block_size;
+    void *pool_end = pool_start + (pool->capacity * pool->block_size);
     if (memblock < pool_start || memblock > pool_end)
         return false;
 
@@ -136,13 +142,13 @@ void pool_block_free(PoolBlock *pool, void *memblock)
      * The user is given a pointer to the second byte of the block, so we
      * decrement it by 1.
      */
-    byte *free_flag = (byte *) memblock - 1;
+    byte *free_flag = (byte *) memblock - pool->offset;
 
     /**
      * Check if the flag byte is within the pool's memory range and if it
      * is the start of a block.
      */
-    if (!pool_block_contains(pool, free_flag))
+    if (!pool_block_contains(pool, memblock))
     {
         pool_last_error = POOL_INVALID_PTR;
         return;
