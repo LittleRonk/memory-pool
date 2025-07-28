@@ -12,8 +12,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// The ftirst canary of the block
 #define CANARY_FREE 0xFFFEC0DE
 #define CANARY_USED 0xFFFFC0DE
+
+// The second canary of the block
+#define END_CANARY 0xC0DE5005E695005E
 
 // Macros for alignment to the nearest multiple
 #define MULTIPLICITY_UP(value, align) (((value) + (align - 1)) & ~((align) - 1))
@@ -23,7 +27,7 @@
  * Used to increase allocated memory to compensate
  * for metadata
  */
-#define ADVANCE 1.25
+#define ADVANCE 1.3
 
 // The minimum amount of memory that can be allocated (must be a multiple 8)
 #define MIN_ALLOC_SIZE 8
@@ -40,11 +44,12 @@
 /**
  * Represents Meta information about a block
  */
-# pragma pack(push, 1)
+# pragma pack(push, 1)              // Set alignment to 1
 typedef struct meta_data {
-    int32_t canary;
-    unsigned int size;
-    struct meta_data *next_block;
+    uint32_t canary;                // Serves as a block busy flag and metadata integrity flag
+    unsigned int size;              // Block size
+    struct meta_data *next_block;   // Points to the next block
+    uint64_t end_canary;            // Necessary for correct recognition of block metadata signatyre
 }MetaData;
 # pragma pack(pop)
 
@@ -151,6 +156,7 @@ void pool_dyn_destroy(PoolDyn *pool);
 /**
  * @brief Returns the current size of the pool's occupied space.
  * @param pool Pointer to the pool.
+ * @return Size of occupied space.
  *
  * @errors:
  *          -POOL_OK: Function worked without errors.
@@ -161,6 +167,7 @@ size_t pool_dyn_size(PoolDyn *pool);
 /**
  * @brief Returns the total size of the pool.
  * @param pool Pointer to the pool.
+ * @return Pool capacity.
  *
  * @errors:
  *          -POOL_OK: Function worked without errors.
@@ -177,5 +184,17 @@ size_t pool_dyn_capacity(PoolDyn *pool);
  *          -POOL_NULL_PTR: pool pointer is NULL.
  */
 void coalesce_free_blocks(PoolDyn *pool);
+
+/**
+ * @brief Restoring damaged blocks
+ * @param pool Pointer to the pool
+ * @param block Pointer to the damaged block
+ *
+ * @errors:
+ *          -POOL_OK: Function worked without errors.
+ *          -POOL_NULL_PTR: pool or block pointer is NULL.
+ *          -POOL_INVALID_PTR: The block pointer is not correct.
+ */
+void restore_block(PoolDyn *pool, void *block);
 
 #endif // DYNAMIC_POOL

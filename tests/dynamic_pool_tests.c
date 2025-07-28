@@ -63,8 +63,8 @@ void test_dynamic_pool_canary_corruption()
     meta->canary = 0xDEADBEEF; // Некорректное значение
 
     // Attempting to free a damaged block
-    pool_dyn_free(pool, block);
-    assert(pool_last_error == POOL_BLOCK_DAMAGED);
+    pool_dyn_free(pool, block);             // The block will be automatically restored
+    assert(pool_last_error == POOL_OK);
 
     pool_dyn_destroy(pool);
     printf("test_dynamic_pool_canary_corruption: OK\n");
@@ -126,11 +126,8 @@ void test_dynamic_pool_coalesce(void)
     void *block_5 = pool_dyn_alloc(pool, 32);
     assert(block_5 != NULL);
 
-    void *block_6 = pool_dyn_alloc(pool, 32);
+    void *block_6 = pool_dyn_alloc(pool, 16);
     assert(block_6 != NULL);
-
-    void *block_7 = pool_dyn_alloc(pool, 16);
-    assert(block_7 != NULL);
 
     // We free 3 consecutive blocks.
     pool_dyn_free(pool, block_3);
@@ -166,4 +163,57 @@ void test_dynamic_pool_coalesce(void)
     assert(pool_last_error == POOL_OK);
 
     printf("test_dynamic_pool_coalesce: OK\n");
+}
+
+void test_dynamic_pool_block_recovery(void)
+{
+    PoolDyn *pool = pool_dyn_create(512);
+    assert(pool != NULL);
+
+    void *block_1 = pool_dyn_alloc(pool, 8);
+    assert(block_1 != NULL);
+
+    void *block_2 = pool_dyn_alloc(pool, 16);
+    assert(block_2 != NULL);
+
+    MetaData *block_2_meta = block_2 - sizeof(MetaData);
+
+    typedef struct example {
+        uint64_t one;
+        uint64_t two;
+    } exm;
+
+    // We damage the block_2
+    exm *ff = block_1;
+    ff->one = 0xF123F;
+    ff->two = 0xFFFFFFFFFFFFFFFF;
+
+    // When the block is released, automatic recovery should occur
+    pool_dyn_free(pool, block_2);
+    assert(pool_last_error == POOL_OK);
+
+    restore_block(pool, block_2);
+    assert(pool_last_error == POOL_OK);
+
+    restore_block(pool, NULL);
+    assert(pool_last_error == POOL_NULL_PTR);
+
+    restore_block(pool, block_1);
+    assert(pool_last_error == POOL_OK);
+
+    // We are passing incorrect pointers
+    restore_block(pool, block_1 - 1);
+    assert(pool_last_error == POOL_INVALID_PTR);
+
+    restore_block(pool, block_1 - 8);
+    assert(pool_last_error == POOL_INVALID_PTR);
+
+    restore_block(pool, block_1 + 1);
+    assert(pool_last_error == POOL_INVALID_PTR);
+
+    restore_block(pool, block_1 + 8);
+    assert(pool_last_error == POOL_INVALID_PTR);
+
+    pool_dyn_destroy(pool);
+    printf("test_dynamic_pool_block_recovery: OK\n");
 }

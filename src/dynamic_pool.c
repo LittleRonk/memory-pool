@@ -17,7 +17,7 @@ PoolDyn *pool_dyn_create(size_t capacity)
 
     /** 
      * We compensate for the memory occupied by metadata
-     * by default, 25% more memory is allocated.
+     * by default, 30% more memory is allocated.
      */
     size_t final_capacity = capacity * ADVANCE;
 
@@ -45,10 +45,13 @@ PoolDyn *pool_dyn_create(size_t capacity)
 
     // Empty pool is one big block
     block_meta->size = final_capacity - sizeof(MetaData);
-    new_pool->capacity = final_capacity;
+
+    // If the pool been offst to align, the pool size is reduced by the offset difference
+    new_pool->capacity = final_capacity - ((uintptr_t) raw - (uintptr_t) mem_pool);
 
     block_meta->next_block = NULL;
     block_meta->canary = CANARY_FREE;
+    block_meta->end_canary = END_CANARY;
     new_pool->raw = raw;
     new_pool->mem_pool = mem_pool;
     new_pool->size = sizeof(MetaData);
@@ -120,6 +123,7 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
             new_block->canary = CANARY_FREE;
             new_block->size = block->size - sizeof(MetaData) - alloc_size;
             new_block->next_block = block->next_block;
+            new_block->end_canary = END_CANARY;
 
             block->size = alloc_size;
             block->next_block = new_block;
@@ -180,10 +184,12 @@ void pool_dyn_free(PoolDyn *pool, void *block)
     MetaData *block_meta = block - sizeof(MetaData);
     // Checking the block's canary
     if (block_meta->canary != CANARY_FREE && block_meta->canary != CANARY_USED)
-    {
-        pool_last_error = POOL_BLOCK_DAMAGED;
+        restore_block(pool, block);
+
+    // If the block was not restored, return control
+    if (pool_last_error != POOL_OK)
         return;
-    }
+
     block_meta->canary = CANARY_FREE;
     pool->size -= block_meta->size;
 
@@ -271,4 +277,119 @@ void coalesce_free_blocks(PoolDyn *pool)
         block_1 = block_2;
         block_2 = block_2->next_block;
     }
+}
+
+void restore_block(PoolDyn *pool, void *block)
+{
+    pool_last_error = POOL_OK;
+
+    if (!pool || ! block)
+    {
+        pool_last_error = POOL_NULL_PTR;
+        return;
+    }
+
+    // Check if the transferred address is in the range of the pool addresses
+    if (block < pool->mem_pool || block > (pool->mem_pool + pool->capacity))
+    {
+        pool_last_error = POOL_INVALID_PTR;
+        return;
+    }
+
+    // If the alignment is incorrect, then the block address is incorrect (there is an offset)
+    if ((uintptr_t) block % ALIGNMENT != 0)
+    {
+        pool_last_error = POOL_INVALID_PTR;
+        return;
+    }
+
+    // If this condition is met, it means that an invalid pointer was passed
+    if (block - sizeof(MetaData) < pool->mem_pool)
+    {
+        pool_last_error = POOL_INVALID_PTR;
+        return;
+    }
+
+    // Metadata of the block to be restored
+    MetaData *block_meta = block - sizeof(MetaData);
+
+
+    // Checking the canaries
+    if (block_meta->canary == CANARY_FREE || block_meta->canary == CANARY_USED)
+        // If the first canary is not damaged, then the block is not damaged
+        return;
+
+    MetaData *previous_block = NULL;   // Previous block metadata
+    MetaData *next_block = NULL;       // Next block metadata
+
+    uint64_t *end_canary = block;  // To track the second canary
+
+    while(pool->mem_pool != (void *) end_canary)
+    {
+        if (*end_canary == END_CANARY)
+        {
+            /**
+             * If a secind canary is found, we also check the first one to exclude
+             * the possibility of a simple coincidence
+             */
+            previous_block = ((void *) (end_canary + 1)) - sizeof(MetaData);  // !!!
+            if (previous_block->canary == CANARY_FREE || previous_block->canary == CANARY_USED)
+                break;
+            else
+                previous_block = NULL;
+        }
+
+        --end_canary;
+    }
+
+    // To determine whether the damaged block is the last one
+    void *pool_last_8_byte = pool->mem_pool + pool->capacity - 8; 
+    end_canary = block;
+
+    end_canary = block;
+    /**
+     * We track the address of the last 8 bytes so as not to go beyond
+     * the pool if the transferred block turns out to be the last one
+     */
+    while (pool_last_8_byte != (void *) end_canary)
+    {
+        if (*end_canary == END_CANARY)
+        {
+            next_block = ((void *) (end_canary + 1)) - sizeof(MetaData);
+            /**
+             * If a secind canary is found, we also check the first one to exclude
+             * the possibility of a simple coincidence
+             */
+            if (next_block->canary == CANARY_FREE || next_block->canary == CANARY_USED)
+                break;
+        }
+        ++end_canary;
+    }
+
+    /**
+     * The next_block pointer of the previous block must point to the block being
+     * restored, if this is not the case then the passed pointer was incorrect.
+     * If previous_block is not found, then we are working with the first block.
+     */
+    if (previous_block && previous_block->next_block != block_meta)
+    {
+        pool_last_error = POOL_INVALID_PTR;
+        return;
+    }
+    else if (!previous_block && (void *) block_meta != pool->mem_pool)
+    {
+        pool_last_error = POOL_INVALID_PTR;
+        return;
+    }
+
+
+    block_meta->canary = CANARY_USED;
+    block_meta->next_block = next_block;
+    block_meta->end_canary = END_CANARY;
+
+    if (next_block)
+        block_meta->size = (uintptr_t) next_block - (uintptr_t) block_meta - sizeof(MetaData);
+    else
+        block_meta->size = pool->capacity -
+            ((uintptr_t) block_meta - (uintptr_t) pool->mem_pool) - sizeof(MetaData);
 }

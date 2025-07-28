@@ -50,4 +50,9 @@ void test_dynamic_pool_alignment(void);
  */
 void test_dynamic_pool_coalesce(void);
 
+/**
+ * @brief Testing the recovery of damaged blocks
+ */
+void test_dynamic_pool_block_recovery(void);
+
 #endif // TESTS_H
