@@ -20,8 +20,8 @@
 #define END_CANARY 0xC0DE5005E695005E
 
 // Macros for alignment to the nearest multiple
-#define MULTIPLICITY_UP(value, align) (((value) + (align - 1)) & ~((align) - 1))
-#define MULTIPLICITY_DOWN(value, align) ((value) / (align) * (align))
+#define MULTIPLICITY_UP(value, multiple) (((value) + (multiple - 1)) & ~((multiple) - 1))
+#define MULTIPLICITY_DOWN(value, multiple) (value) & ~((multiple) - 1)
 
 /**
  * Used to increase allocated memory to compensate
@@ -29,17 +29,14 @@
  */
 #define ADVANCE 1.3
 
-// The minimum amount of memory that can be allocated (must be a multiple 8)
+/**
+ * The minimum amount of memory that can be allocated.
+ * Must be a power of TWO and NOT less 8.
+ */
 #define MIN_ALLOC_SIZE 8
 
 // Used to align the pool address. It is forbidden to change this value.
 #define ALIGNMENT 8
-
-/**
- * Defines the multiplicity of the pool and allocated memory
- * cells. It is forbidden to change this value.
- */
-#define MULTIPLICITY 8
 
 /**
  * Represents Meta information about a block

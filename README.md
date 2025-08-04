@@ -4,7 +4,7 @@ Implementing pools with fixed and dynamic block sizes in C
 
 ## In Development
 
-- **Data recovery**: Attempt to recovery data when dynamic pool blocks are damaged
+- **Logging**: Logging for a pool with a fixed block size
 
 ## Key Features
 
@@ -140,3 +140,15 @@ int main() {
 - **size_t pool_dyn_capacity(PoolDyn \*pool)**: Returns the total size of the pool.
 
 - **void coalesce_free_blocks(PoolDyn \*pool)**: Merges adjacent free blocks (eliminates fragmentation).
+
+- **void restore_block(PoolDyn \*pool, void \*block)**: Restore damaged block.
+
+### Pool logger
+
+- **poolEnableLogToStdout(logLevel level)**: Enable logging to stdout.
+
+- **poolDisableLogToStdout(void)**: Disable logging to stdout.
+
+- **poolEnableLogToFile(const char \*file_name, logLevel level)**: Enable logging to file.
+
+- **poolDisableLogToFile(void)**: Disable logging to file.

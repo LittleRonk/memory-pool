@@ -4,6 +4,7 @@ PoolError pool_last_error = POOL_OK;
 
 char *str_errors[] = {
     "POOL_OK",
+    "POOL_CREATE_FAILED",
     "POOL_NULL_PTR",
     "POOL_INVALID_PTR",
     "POOL_ALLOC_FAILED",

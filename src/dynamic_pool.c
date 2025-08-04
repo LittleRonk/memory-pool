@@ -1,9 +1,15 @@
+#include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <dynamic_pool.h>
 #include <pool_errors.h>
+#include <logger.h>
+#include <log_macros.h>
+
+// Buffer for logger
+char logger_buffer[256];
 
 PoolDyn *pool_dyn_create(size_t capacity)
 {
@@ -11,15 +17,18 @@ PoolDyn *pool_dyn_create(size_t capacity)
     PoolDyn *new_pool = calloc(1, sizeof(PoolDyn));
     if (!new_pool)
     {
-        pool_last_error = POOL_ALLOC_FAILED;
+        LOG_POOL_CREATE_ERROR(sizeof(PoolDyn));
+        pool_last_error = POOL_CREATE_FAILED;
         return NULL;
     }
 
     /** 
      * We compensate for the memory occupied by metadata
      * by default, 30% more memory is allocated.
+     * Then round this value to the nearest multiple of the
+     * minimum block size.
      */
-    size_t final_capacity = capacity * ADVANCE;
+    size_t final_capacity = MULTIPLICITY_UP((size_t) (capacity * ADVANCE), sizeof(MetaData) + MIN_ALLOC_SIZE);
 
     /** 
      * Overflow check
@@ -27,12 +36,13 @@ PoolDyn *pool_dyn_create(size_t capacity)
      * maximum value of the size_t type.
      */
     if (final_capacity < capacity)
-        final_capacity = capacity;
+        final_capacity = MULTIPLICITY_DOWN(capacity, sizeof(MetaData) + MIN_ALLOC_SIZE);
 
     void *raw = malloc(final_capacity);
     if (!raw)
     {
-        pool_last_error = POOL_ALLOC_FAILED;
+        LOG_POOL_CREATE_ERROR(sizeof(PoolDyn));
+        pool_last_error = POOL_CREATE_FAILED;
         free(new_pool);
         return NULL;
     }
@@ -55,8 +65,41 @@ PoolDyn *pool_dyn_create(size_t capacity)
     new_pool->raw = raw;
     new_pool->mem_pool = mem_pool;
     new_pool->size = sizeof(MetaData);
+    LOG_POOL_CREATE_INFO(final_capacity, MIN_ALLOC_SIZE, (void *) raw);
 
     return new_pool;
+}
+
+/**
+ * @brief Finds and returns the next block in the pool
+ * @param pool Pointer to the pool
+ * @param block Initial block
+ * @return Pointer to the next block
+ */
+void *find_next_block(PoolDyn *pool, void *block)
+{
+    MetaData *reference_block = pool->mem_pool;
+    size_t canary_size = sizeof(reference_block->canary);   // Pool advancement step
+
+    /**
+     * If we get to this point there is no point in continuing. Either all the
+     * subsequent blocks we are looking for are corrupted, or the initial block is
+     * the last block in the pool.
+     */
+    void *stop_byte = pool->mem_pool + pool->capacity - MIN_ALLOC_SIZE;
+    MetaData *desired_block = block + canary_size;
+
+    while ((uintptr_t) desired_block > (uintptr_t) stop_byte)
+    {
+        if ((desired_block->canary == CANARY_FREE || desired_block->canary == CANARY_USED) &&
+                desired_block->end_canary == END_CANARY)
+        {
+            return desired_block;
+        }
+        desired_block = (void *) desired_block + canary_size;
+    }
+
+    return NULL;
 }
 
 void *pool_dyn_alloc(PoolDyn *pool, size_t size)
@@ -64,6 +107,7 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
     pool_last_error = POOL_OK;
     if (!pool)
     {
+        LOG_POOL_NULL_PTR;
         pool_last_error = POOL_NULL_PTR;
         return NULL;
     }
@@ -76,10 +120,11 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
     if (size < MIN_ALLOC_SIZE)
         alloc_size = MIN_ALLOC_SIZE;
     else
-        alloc_size = MULTIPLICITY_UP(size, MULTIPLICITY);
+        alloc_size = MULTIPLICITY_UP(size, ALIGNMENT);
 
     if (alloc_size > (pool->capacity - pool->size))
     {
+        LOG_POOL_NOT_FREE_SPACE(pool->capacity - pool->size, alloc_size);
         pool_last_error = POOL_ALLOC_FAILED;
         return NULL;
     }
@@ -98,13 +143,15 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
         }
 
         /**
-         * If the canary of even one block is corrypted, further use of the
-         * pool may result in unpredictable behavior
+         * If the block canary is damaged, skip this block
          */
         if (block->canary != CANARY_FREE && block->canary != CANARY_USED)
         {
+            LOG_BLOCK_DAMAGED((void *) block + sizeof(MetaData));
             pool_last_error = POOL_BLOCK_DAMAGED;
-            return NULL;
+
+            block = (MetaData *) find_next_block(pool, (void *)block);
+            continue;
         }
 
         block = block->next_block;
@@ -130,12 +177,17 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
             pool->size += sizeof(MetaData) + alloc_size;
         }
         else
-            pool->size += alloc_size;
+            pool->size += block->size;
 
         block->canary = CANARY_USED;
-        return (void *) block + sizeof(MetaData);
+
+        LOG_BLOCK_ALLOCATION(pool->mem_pool, (void *)block + sizeof(MetaData), block->size);
+
+        // Move the pointer to the beginnin of the useful space and return if
+        return (void *)block + sizeof(MetaData);
     }
 
+    LOG_POOL_FRAGMENTED(alloc_size);
     pool_last_error = POOL_ALLOC_FAILED;
     return NULL;
 }
@@ -163,6 +215,7 @@ void pool_dyn_free(PoolDyn *pool, void *block)
     pool_last_error = POOL_OK;
     if (!pool || !block)
     {
+        LOG_POOL_NULL_PTR;
         pool_last_error = POOL_NULL_PTR;
         return;
     }
@@ -170,6 +223,7 @@ void pool_dyn_free(PoolDyn *pool, void *block)
     // We check that the transferred block address belong to the pool
     if (block < pool->mem_pool || block > pool->mem_pool + pool->capacity)
     {
+        LOG_POOL_ALIEN_PTR;
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
@@ -177,6 +231,7 @@ void pool_dyn_free(PoolDyn *pool, void *block)
     // Check alignment
     if ((uintptr_t) block % ALIGNMENT != 0)
     {
+        LOG_POOL_PTR_NOT_ALIGNMENT;
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
@@ -184,11 +239,13 @@ void pool_dyn_free(PoolDyn *pool, void *block)
     MetaData *block_meta = block - sizeof(MetaData);
     // Checking the block's canary
     if (block_meta->canary != CANARY_FREE && block_meta->canary != CANARY_USED)
+    {
         restore_block(pool, block);
 
-    // If the block was not restored, return control
-    if (pool_last_error != POOL_OK)
-        return;
+        // If the block was not restored, return control
+        if (pool_last_error != POOL_OK)
+            return;
+    }
 
     block_meta->canary = CANARY_FREE;
     pool->size -= block_meta->size;
@@ -200,6 +257,7 @@ void pool_dyn_clear(PoolDyn *pool)
     pool_last_error = POOL_OK;
     if (!pool)
     {
+        LOG_POOL_NULL_PTR;
         pool_last_error = POOL_NULL_PTR;
         return;
     }
@@ -208,6 +266,7 @@ void pool_dyn_clear(PoolDyn *pool)
     pool->size = sizeof(MetaData);
     block_meta->size = pool->capacity - sizeof(MetaData);
     block_meta->canary = CANARY_FREE;
+    LOG_POOL_CLEANUP(pool->mem_pool);
 }
 
 void pool_dyn_destroy(PoolDyn *pool)
@@ -215,12 +274,14 @@ void pool_dyn_destroy(PoolDyn *pool)
     pool_last_error = POOL_OK;
     if (!pool)
     {
+        LOG_POOL_NULL_PTR;
         pool_last_error = POOL_NULL_PTR;
         return;
     }
 
     free(pool->raw);
     free(pool);
+    LOG_POOL_DESTROYED(pool->mem_pool);
 }
 
 size_t pool_dyn_size(PoolDyn *pool)
@@ -247,15 +308,19 @@ size_t pool_dyn_capacity(PoolDyn *pool)
 
 void coalesce_free_blocks(PoolDyn *pool)
 {
+    LOG_POOL_OPTIMIZATION_ATTEMPT(pool->mem_pool);
     pool_last_error = POOL_OK;
     if (!pool)
     {
+        LOG_POOL_NULL_PTR;
+        LOG_POOL_OPTIMIZE_ERROR(pool->mem_pool);
         pool_last_error = POOL_NULL_PTR;
         return;
     }
 
     MetaData *block_1 = pool->mem_pool;
     MetaData *block_2 = block_1->next_block;
+    bool successful = false;
 
     while (block_2)
     {
@@ -266,6 +331,7 @@ void coalesce_free_blocks(PoolDyn *pool)
             block_1->next_block = block_2->next_block;
             block_1->size += sizeof(MetaData) + block_2->size;
             pool->size -= sizeof(MetaData);
+            successful = true;
 
             /**
              * We move to the next block and try again (in case
@@ -277,14 +343,22 @@ void coalesce_free_blocks(PoolDyn *pool)
         block_1 = block_2;
         block_2 = block_2->next_block;
     }
+
+    if (successful)
+        LOG_POOL_OPTIMIZE_SUCCESSFUL(pool->mem_pool);
+    else
+        LOG_POOL_OPTIMIZE_FAILED(pool->mem_pool);
 }
 
 void restore_block(PoolDyn *pool, void *block)
 {
+    LOG_RESTORE_BLOCK(block);
     pool_last_error = POOL_OK;
 
     if (!pool || ! block)
     {
+        LOG_POOL_NULL_PTR;
+        LOG_BLOCK_RECOVERY_FAILED(block);
         pool_last_error = POOL_NULL_PTR;
         return;
     }
@@ -292,6 +366,8 @@ void restore_block(PoolDyn *pool, void *block)
     // Check if the transferred address is in the range of the pool addresses
     if (block < pool->mem_pool || block > (pool->mem_pool + pool->capacity))
     {
+        LOG_POOL_ALIEN_PTR;
+        LOG_BLOCK_RECOVERY_FAILED(block);
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
@@ -299,6 +375,8 @@ void restore_block(PoolDyn *pool, void *block)
     // If the alignment is incorrect, then the block address is incorrect (there is an offset)
     if ((uintptr_t) block % ALIGNMENT != 0)
     {
+        LOG_POOL_PTR_NOT_ALIGNMENT;
+        LOG_BLOCK_RECOVERY_FAILED(block);
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
@@ -306,6 +384,8 @@ void restore_block(PoolDyn *pool, void *block)
     // If this condition is met, it means that an invalid pointer was passed
     if (block - sizeof(MetaData) < pool->mem_pool)
     {
+        LOG_POOL_ALIEN_PTR;
+        LOG_BLOCK_RECOVERY_FAILED(block);
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
@@ -373,11 +453,15 @@ void restore_block(PoolDyn *pool, void *block)
      */
     if (previous_block && previous_block->next_block != block_meta)
     {
+        LOG_POOL_INVALID_PTR(block);
+        LOG_BLOCK_RECOVERY_FAILED(block);
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
     else if (!previous_block && (void *) block_meta != pool->mem_pool)
     {
+        LOG_POOL_INVALID_PTR(block);
+        LOG_BLOCK_RECOVERY_FAILED(block);
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
@@ -392,4 +476,6 @@ void restore_block(PoolDyn *pool, void *block)
     else
         block_meta->size = pool->capacity -
             ((uintptr_t) block_meta - (uintptr_t) pool->mem_pool) - sizeof(MetaData);
+
+    LOG_BLOCK_SUCCESSFUL_RECOVERY(block);
 }

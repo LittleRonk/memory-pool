@@ -3,7 +3,7 @@ add_executable(pool_tests
     block_pool_tests.c
     dynamic_pool_tests.c)
 
-target_link_libraries(pool_tests PRIVATE pool)
+target_link_libraries(pool_tests PRIVATE pool pool_logger)
 
 enable_testing()
 

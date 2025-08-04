@@ -9,6 +9,7 @@
 // Error codes
 typedef enum {
     POOL_OK = 0,        // Successful completion
+    POOL_CREATE_FAILED, // Error creating pool
     POOL_NULL_PTR,      // NULL pointer passed
     POOL_INVALID_PTR,   // Invalid pointer passed
     POOL_INVALID_ARGS,  // Invalig argument passed
