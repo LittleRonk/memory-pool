@@ -9,7 +9,7 @@
 #include <log_macros.h>
 
 // Buffer for logger
-char logger_buffer[256];
+extern char logger_buffer[256];
 
 PoolDyn *pool_dyn_create(size_t capacity)
 {
@@ -124,7 +124,7 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
 
     if (alloc_size > (pool->capacity - pool->size))
     {
-        LOG_POOL_NOT_FREE_SPACE(pool->capacity - pool->size, alloc_size);
+        LOG_POOL_NOT_FREE_SPACE(pool->mem_pool, pool->capacity - pool->size, alloc_size);
         pool_last_error = POOL_ALLOC_FAILED;
         return NULL;
     }
@@ -147,7 +147,7 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
          */
         if (block->canary != CANARY_FREE && block->canary != CANARY_USED)
         {
-            LOG_BLOCK_DAMAGED((void *) block + sizeof(MetaData));
+            LOG_BLOCK_DAMAGED(pool->mem_pool, (void *) block + sizeof(MetaData));
             pool_last_error = POOL_BLOCK_DAMAGED;
 
             block = (MetaData *) find_next_block(pool, (void *)block);
@@ -187,7 +187,7 @@ void *pool_dyn_alloc(PoolDyn *pool, size_t size)
         return (void *)block + sizeof(MetaData);
     }
 
-    LOG_POOL_FRAGMENTED(alloc_size);
+    LOG_POOL_FRAGMENTED(pool->mem_pool, alloc_size);
     pool_last_error = POOL_ALLOC_FAILED;
     return NULL;
 }
@@ -223,7 +223,7 @@ void pool_dyn_free(PoolDyn *pool, void *block)
     // We check that the transferred block address belong to the pool
     if (block < pool->mem_pool || block > pool->mem_pool + pool->capacity)
     {
-        LOG_POOL_ALIEN_PTR;
+        LOG_POOL_ALIEN_PTR(block);
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
@@ -231,7 +231,7 @@ void pool_dyn_free(PoolDyn *pool, void *block)
     // Check alignment
     if ((uintptr_t) block % ALIGNMENT != 0)
     {
-        LOG_POOL_PTR_NOT_ALIGNMENT;
+        LOG_POOL_PTR_NOT_ALIGNMENT(block);
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
@@ -240,6 +240,7 @@ void pool_dyn_free(PoolDyn *pool, void *block)
     // Checking the block's canary
     if (block_meta->canary != CANARY_FREE && block_meta->canary != CANARY_USED)
     {
+        LOG_BLOCK_DAMAGED(pool->mem_pool, block);
         restore_block(pool, block);
 
         // If the block was not restored, return control
@@ -266,7 +267,7 @@ void pool_dyn_clear(PoolDyn *pool)
     pool->size = sizeof(MetaData);
     block_meta->size = pool->capacity - sizeof(MetaData);
     block_meta->canary = CANARY_FREE;
-    LOG_POOL_CLEANUP(pool->mem_pool);
+    LOG_POOL_CLEANUP(pool->mem_pool, pool->capacity);
 }
 
 void pool_dyn_destroy(PoolDyn *pool)
@@ -358,7 +359,7 @@ void restore_block(PoolDyn *pool, void *block)
     if (!pool || ! block)
     {
         LOG_POOL_NULL_PTR;
-        LOG_BLOCK_RECOVERY_FAILED(block);
+        LOG_BLOCK_RECOVERY_FAILED(pool->mem_pool, block);
         pool_last_error = POOL_NULL_PTR;
         return;
     }
@@ -366,8 +367,8 @@ void restore_block(PoolDyn *pool, void *block)
     // Check if the transferred address is in the range of the pool addresses
     if (block < pool->mem_pool || block > (pool->mem_pool + pool->capacity))
     {
-        LOG_POOL_ALIEN_PTR;
-        LOG_BLOCK_RECOVERY_FAILED(block);
+        LOG_POOL_ALIEN_PTR(block);
+        LOG_BLOCK_RECOVERY_FAILED(pool->mem_pool, block);
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
@@ -375,8 +376,8 @@ void restore_block(PoolDyn *pool, void *block)
     // If the alignment is incorrect, then the block address is incorrect (there is an offset)
     if ((uintptr_t) block % ALIGNMENT != 0)
     {
-        LOG_POOL_PTR_NOT_ALIGNMENT;
-        LOG_BLOCK_RECOVERY_FAILED(block);
+        LOG_POOL_PTR_NOT_ALIGNMENT(block);
+        LOG_BLOCK_RECOVERY_FAILED(pool->mem_pool, block);
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
@@ -384,8 +385,8 @@ void restore_block(PoolDyn *pool, void *block)
     // If this condition is met, it means that an invalid pointer was passed
     if (block - sizeof(MetaData) < pool->mem_pool)
     {
-        LOG_POOL_ALIEN_PTR;
-        LOG_BLOCK_RECOVERY_FAILED(block);
+        LOG_POOL_ALIEN_PTR(block);
+        LOG_BLOCK_RECOVERY_FAILED(pool->mem_pool, block);
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
@@ -454,14 +455,14 @@ void restore_block(PoolDyn *pool, void *block)
     if (previous_block && previous_block->next_block != block_meta)
     {
         LOG_POOL_INVALID_PTR(block);
-        LOG_BLOCK_RECOVERY_FAILED(block);
+        LOG_BLOCK_RECOVERY_FAILED(pool->mem_pool, block);
         pool_last_error = POOL_INVALID_PTR;
         return;
     }
     else if (!previous_block && (void *) block_meta != pool->mem_pool)
     {
         LOG_POOL_INVALID_PTR(block);
-        LOG_BLOCK_RECOVERY_FAILED(block);
+        LOG_BLOCK_RECOVERY_FAILED(pool->mem_pool, block);
         pool_last_error = POOL_INVALID_PTR;
         return;
     }

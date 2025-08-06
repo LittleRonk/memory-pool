@@ -14,33 +14,41 @@
     logging(logger_buffer, LOG_LEVEL_ERROR); }\
     while (0)
 
+// Macro for logging message about invalid arguments
+#define LOG_POOL_INVALID_ARGS do {\
+    snprintf(logger_buffer, sizeof(logger_buffer),\
+            "[ERROR] Invalid parameters passed.\nFunc: %s\n", __func__);\
+    logging(logger_buffer, LOG_LEVEL_ERROR); }\
+    while (0)
+
 // Macro for logging block allocation error (Not enough free space)
-#define LOG_POOL_NOT_FREE_SPACE(free_memory, memory_required) do {\
+#define LOG_POOL_NOT_FREE_SPACE(pool, free_memory, memory_required) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
             "[ERROR] Allocation failed, there is not enough free memory in the pool.\n"\
-            "Amount of free memory: %lu\nMemory required: %lu\n", (free_memory), (memory_required));\
+            "Pool: %p | Amount of free memory: %lu | Memory required: %lu\n",\
+            (pool), (free_memory), (memory_required));\
     logging(logger_buffer, LOG_LEVEL_ERROR); }\
     while (0)
 
 // Macro for logging block allocation error (the pool is highly fragmented)
-#define LOG_POOL_FRAGMENTED(memory_required) do {\
+#define LOG_POOL_FRAGMENTED(pool, memory_required) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[ERROR] Allocation failed, the pool is highly fragmented.\nMemory required: %lu\n",\
-            (memory_required));\
+            "[ERROR] Allocation failed, the pool is highly fragmented.\nPool %p | Memory required: %lu\n",\
+            (pool), (memory_required));\
     logging(logger_buffer, LOG_LEVEL_ERROR); }\
     while (0)
 
 // Macro for logging optimization error message
 #define LOG_POOL_OPTIMIZE_ERROR(pool) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[ERROR] Error trying to optimize pool %p\n", (pool));\
+            "[ERROR] Error trying to optimize pool.\nPool: %p\n", (pool));\
     logging(logger_buffer, LOG_LEVEL_ERROR); }\
     while (0)
 
 // Macro for logging block recovery error message
-#define LOG_BLOCK_RECOVERY_FAILED(block) do {\
+#define LOG_BLOCK_RECOVERY_FAILED(pool, block) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[ERROR] Failed to restore block %p\n", (block));\
+            "[ERROR] Failed to restore block.\nPool: %p | Block %p\n", (pool), (block));\
     logging(logger_buffer, LOG_LEVEL_ERROR); }\
     while (0)
 
@@ -48,34 +56,37 @@
 
 // Macro for logging NULL pointer error
 #define LOG_POOL_NULL_PTR do {\
-    snprintf(logger_buffer, sizeof(logger_buffer), "[WARN] NULL pointer was passed. Func: %s\n", __func__);\
+    snprintf(logger_buffer, sizeof(logger_buffer),\
+            "[WARN] NULL pointer was passed.\nFunc: %s\n", __func__);\
     logging(logger_buffer, LOG_LEVEL_WARN); }\
     while (0)
 
 // Macro for logging pointer error (this pointer does not belong to the pool)
-#define LOG_POOL_ALIEN_PTR do {\
+#define LOG_POOL_ALIEN_PTR(ptr) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[WARN] Someone else's pointer was passed. Func: %s\n", __func__);\
+            "[WARN] Someone else's pointer was passed.\nFunc: %s | Pointer %p\n", __func__, (ptr));\
     logging(logger_buffer, LOG_LEVEL_WARN); }\
     while (0)
 
 // Macro for logging pointer alignment error
-#define LOG_POOL_PTR_NOT_ALIGNMENT do {\
+#define LOG_POOL_PTR_NOT_ALIGNMENT(ptr) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[WARN] The passed pointer is not aligned. Func %s\n", __func__);\
+            "[WARN] The passed pointer is not aligned.\nFunc: %s | Pointer: %p\n", __func__, (ptr));\
     logging(logger_buffer, LOG_LEVEL_WARN); }\
     while (0)
 
 // Macro for logging invalid pointer message (pointer is not the start of a block)
 #define LOG_POOL_INVALID_PTR(ptr) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[WARN] Pointer %p is not the start of a block. Func %s\n", (ptr), __func__);\
+            "[WARN] The passed pointer is not the start of a block.\nFunc: %s | Pointer: %p\n",\
+             __func__, (ptr));\
     logging(logger_buffer, LOG_LEVEL_WARN); }\
     while (0)
 
 // Macro for logging a message about a damaged block
-#define LOG_BLOCK_DAMAGED(block) do {\
-    snprintf(logger_buffer, sizeof(logger_buffer), "[WARN] Block %p is damaged\n", (block));\
+#define LOG_BLOCK_DAMAGED(pool, block) do {\
+    snprintf(logger_buffer, sizeof(logger_buffer),\
+            "[WARN] Block is damaged.\nPool: %p | Block %p\n", (pool), (block));\
     logging(logger_buffer, LOG_LEVEL_WARN); }\
     while (0)
 
@@ -84,57 +95,57 @@
 // Macro for logging optimizarion failed message
 #define LOG_POOL_OPTIMIZE_FAILED(pool) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[INFO] Pool %p optimization failed (no result)\n", (pool));\
+            "[INFO] Pool optimization failed (no result). Pool: %p\n", (pool));\
     logging(logger_buffer, LOG_LEVEL_INFO); }\
     while (0)
 
 // Macro for logging optimization successful message
 #define LOG_POOL_OPTIMIZE_SUCCESSFUL(pool) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[INFO] Pool %p optimization was successful (several blocks ware merged)\n", (pool));\
+            "[INFO] Pool optimization was successful (several blocks ware merged).\nPool: %p\n", (pool));\
     logging(logger_buffer, LOG_LEVEL_INFO); }\
     while (0)
 
 // Macro for logging block recovery attempt
 #define LOG_RESTORE_BLOCK(block) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[INFO] Attempt to restore block %p\n", (block));\
+            "[INFO] Attempt to restore block.\nBlock: %p\n", (block));\
     logging(logger_buffer, LOG_LEVEL_INFO); }\
     while (0)
 
 // Macro for logging a message about successful block recovery
 #define LOG_BLOCK_SUCCESSFUL_RECOVERY(block) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[INFO] Block %p successfully restored\n", (block));\
+            "[INFO] Block successfully restored.\nBlock: %p\n", (block));\
     logging(logger_buffer, LOG_LEVEL_INFO); }\
     while (0)
 
 // Macro for logging pool optimization attempt (partial fragmentation eliminator)
 #define LOG_POOL_OPTIMIZATION_ATTEMPT(pool) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[INFO] Trying to optimize pool %p\n", (pool));\
+            "[INFO] Trying to optimize pool.\nPool: %p\n", (pool));\
     logging(logger_buffer, LOG_LEVEL_INFO); }\
     while (0)
 
 // Macro for logging pool creation information
 #define LOG_POOL_CREATE_INFO(capacity, min_block_size, start_address) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[INFO] Pool has been created: capacity - %lu | min block size - %d | start address - %p\n",\
+            "[INFO] Pool has been created.\nCapacity: %lu | Min block size: %d | Start address: %p\n",\
             (capacity), (min_block_size), (start_address));\
     logging(logger_buffer, LOG_LEVEL_INFO); }\
     while (0)
 
 // Macro for logging message about pool cleanup
-#define LOG_POOL_CLEANUP(pool) do {\
+#define LOG_POOL_CLEANUP(pool, pool_capacity) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[INFO] Pool %p cleanup\n", (pool));\
+            "[INFO] Pool cleanup.\nPool: %p | Capacity: %lu\n", (pool), (pool_capacity));\
     logging(logger_buffer, LOG_LEVEL_INFO); }\
     while (0)
 
 // Macro for logging message about pool destruction
 #define LOG_POOL_DESTROYED(pool) do {\
     snprintf(logger_buffer, sizeof(logger_buffer),\
-            "[INFO] Pool %p was destroyed\n", (pool));\
+            "[INFO] Pool was destroyed.\nPool: %p\n", (pool));\
     logging(logger_buffer, LOG_LEVEL_INFO); }\
     while (0)
 

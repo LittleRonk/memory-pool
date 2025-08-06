@@ -4,7 +4,7 @@
 
 int main() {
     poolEnableLogToStdout(LOG_LEVEL_WARN);
-    poolEnableLogToFile("log.txt", LOG_LEVEL_DEBUG);
+    //poolEnableLogToFile("log.txt", LOG_LEVEL_DEBUG);
     // Block pool tests
     test_block_pool_basic();
     test_block_pool_overflow();

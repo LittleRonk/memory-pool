@@ -2,10 +2,6 @@
 
 Implementing pools with fixed and dynamic block sizes in C
 
-## In Development
-
-- **Logging**: Logging for a pool with a fixed block size
-
 ## Key Features
 
 ### General

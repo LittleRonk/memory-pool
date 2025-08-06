@@ -1,15 +1,21 @@
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <pool_errors.h>
+#include <pool_logger.h>
+#include <log_macros.h>
 #include <block_pool.h>
+
+extern char logger_buffer[256];
 
 PoolBlock *pool_block_create(size_t capacity, size_t block_size)
 {
     pool_last_error = POOL_OK;
     if ((capacity == 0) || (block_size == 0))
     {
+        LOG_POOL_INVALID_ARGS;
         pool_last_error = POOL_INVALID_ARGS;
         return NULL;
     }
@@ -17,6 +23,7 @@ PoolBlock *pool_block_create(size_t capacity, size_t block_size)
     PoolBlock *new_pool = calloc(1, sizeof(PoolBlock));
     if (!new_pool)
     {
+        LOG_POOL_CREATE_ERROR(sizeof(PoolBlock));
         pool_last_error = POOL_ALLOC_FAILED;
         return NULL;
     }
@@ -46,6 +53,7 @@ PoolBlock *pool_block_create(size_t capacity, size_t block_size)
 
 
     buffer_allocation_error:
+        LOG_POOL_CREATE_ERROR(sizeof(PoolBlock) + (capacity * block_size));
         pool_last_error = POOL_ALLOC_FAILED;
         free(new_pool);
     return NULL;
@@ -57,12 +65,14 @@ void *pool_block_alloc(PoolBlock *pool)
 
     if (!pool)
     {
+        LOG_POOL_NULL_PTR;
         pool_last_error = POOL_NULL_PTR;
         return NULL;
     }
 
     if (pool->size == pool->capacity)
     {
+        LOG_POOL_NOT_FREE_SPACE(pool->mem_pool, pool->capacity - pool->size, pool->block_size);
         pool_last_error = POOL_ALLOC_FAILED;
         return NULL;
     }
@@ -79,6 +89,7 @@ void *pool_block_alloc(PoolBlock *pool)
             *free_flag = 1;
             ++pool->size;
             pool->last_clear = NULL;
+            LOG_BLOCK_ALLOCATION(pool->mem_pool, (void *) (free_flag + pool->offset), pool->block_size);
             return (void *) (free_flag + pool->offset);
         }
     }
@@ -97,6 +108,7 @@ void *pool_block_alloc(PoolBlock *pool)
         {
             *free_flag = 1;
             ++pool->size;
+            LOG_BLOCK_ALLOCATION(pool->mem_pool, (void *) (free_flag + pool->offset), pool->block_size);
             return (void *) (free_flag + pool->offset);
         }
 
@@ -121,11 +133,19 @@ bool pool_block_contains(const PoolBlock *pool, const void *memblock)
     void *pool_start = pool->mem_pool;
     void *pool_end = pool_start + (pool->capacity * pool->block_size);
     if (memblock < pool_start || memblock > pool_end)
+    {
+        LOG_POOL_ALIEN_PTR(memblock);
         return false;
+    }
 
     // Check if the block is the start of block in the pool.
-    return ((uintptr_t)pool_start - (uintptr_t) memblock) %
-        pool->block_size == 0;
+    if (((uintptr_t) memblock - (uintptr_t)pool_start) %
+        pool->block_size == 0)
+        return true;
+    else
+    {
+        LOG_POOL_PTR_NOT_ALIGNMENT(memblock);
+    }
 }
 
 void pool_block_free(PoolBlock *pool, void *memblock)
@@ -133,6 +153,7 @@ void pool_block_free(PoolBlock *pool, void *memblock)
     pool_last_error = POOL_OK;
     if (!pool || !memblock)
     {
+        LOG_POOL_NULL_PTR;
         pool_last_error = POOL_NULL_PTR;
         return;
     }
@@ -157,6 +178,7 @@ void pool_block_free(PoolBlock *pool, void *memblock)
     *free_flag = 0;
     pool->last_clear = free_flag;
     --pool->size;
+    LOG_BLOCK_FREE(pool->mem_pool, memblock, pool->block_size);
 }
 
 void pool_block_clear(PoolBlock *pool)
@@ -164,6 +186,7 @@ void pool_block_clear(PoolBlock *pool)
     pool_last_error = POOL_OK;
     if (!pool)
     {
+        LOG_POOL_NULL_PTR;
         pool_last_error = POOL_NULL_PTR;
         return;
     }
@@ -176,6 +199,7 @@ void pool_block_clear(PoolBlock *pool)
         **(buffer + i) = 0;
 
     pool->size = 0;
+    LOG_POOL_CLEANUP(pool->mem_pool, pool->capacity);
 }
 
 void pool_block_destroy(PoolBlock *pool)
@@ -189,6 +213,7 @@ void pool_block_destroy(PoolBlock *pool)
 
     free(pool->mem_pool);
     free(pool);
+    LOG_POOL_DESTROYED(pool->mem_pool);
 }
 
 size_t pool_block_size(PoolBlock *pool)
@@ -196,6 +221,7 @@ size_t pool_block_size(PoolBlock *pool)
     pool_last_error = POOL_OK;
     if (!pool)
     {
+        LOG_POOL_NULL_PTR;
         pool_last_error = POOL_NULL_PTR;
         return 0;
     }
@@ -208,6 +234,7 @@ size_t pool_block_capacity(PoolBlock *pool)
     pool_last_error = POOL_OK;
     if (!pool)
     {
+        LOG_POOL_NULL_PTR;
         pool_last_error = POOL_NULL_PTR;
         return 0;
     }

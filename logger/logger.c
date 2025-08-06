@@ -9,6 +9,8 @@ static logLevel file_log_level = LOG_LEVEL_FATAL;
 static logLevel stdout_log_level = LOG_LEVEL_FATAL;
 static FILE *log_file = NULL;
 
+char logger_buffer[256];
+
 void logToStdoutEnable(logLevel level)
 {
     log_to_stdout = 1;
